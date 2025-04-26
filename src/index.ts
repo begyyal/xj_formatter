@@ -1,20 +1,19 @@
-import { languages, ExtensionContext, TextEdit, TextDocument, Range } from 'vscode';
+import { window, languages, ExtensionContext, TextEdit, TextDocument, FormattingOptions } from 'vscode';
 import { parse } from "java-parser";
+import { NodeProcessor } from './prcs/node-processor';
 
+export const s_out = window.createOutputChannel("xj-formatter");;
 export function activate(context: ExtensionContext) {
     languages.registerDocumentFormattingEditProvider('java', {
-        provideDocumentFormattingEdits(document: TextDocument): TextEdit[] {
-            // const firstLine = document.lineAt(0);
-            // if (firstLine.text !== '42') {
-            //     return [TextEdit.insert(firstLine.range.start, '42\n')];
-            // }
-            const node = parse(document.getText());
-            Object.entries(node.children);
-            const endLine = document.lineAt(document.lineCount - 1);
-
-            return [TextEdit.delete(endLine.range), TextEdit.insert(endLine.range.start, "aaaaa")];
+        provideDocumentFormattingEdits(document: TextDocument, options: FormattingOptions): TextEdit[] {
+            try {
+                const node = parse(document.getText());
+                return new NodeProcessor(options).exe(document, node);
+            } catch (e) {
+                s_out.appendLine("something went wrong.");
+                s_out.appendLine(e instanceof Error && e.stack ? e.stack : e);
+            }
+            return [];
         }
     });
 }
-
-

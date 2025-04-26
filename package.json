@@ -1,7 +1,7 @@
 {
     "name": "xj-formatter",
     "displayName": "xj-formatter",
-    "description": "",
+    "description": "Java formatter for VS Code Extension with minimum functionalities.",
     "version": "0.0.1",
     "publisher": "begyyal",
     "license": "Apache-2.0",
@@ -34,6 +34,7 @@
     },
     "scripts": {
         "build": "tsc && ncc build dist/tsc/index.js",
+        "reinstall": "npm run build && vsce package && code --install-extension xj-formatter-0.0.1.vsix",
         "postinstall": "node ./node_modules/vscode/bin/install && tsc"
     },
     "devDependencies": {
