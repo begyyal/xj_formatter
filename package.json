@@ -4,6 +4,11 @@
     "description": "",
     "version": "0.0.1",
     "publisher": "begyyal",
+    "license": "Apache-2.0",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/begyyal/xj_formatter"
+    },
     "engines": {
         "vscode": "^1.96.0"
     },
@@ -37,6 +42,7 @@
         "vscode": "^1.1.37"
     },
     "dependencies": {
-        "java-parser": "^2.3.3"
+        "java-parser": "^2.3.3",
+        "xjs-common": "^7.0.0"
     }
 }
