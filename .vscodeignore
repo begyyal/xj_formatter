@@ -1,8 +1,10 @@
 .vscode/**
 typings/**
-out/test/**
-test/**
-src/**
+node_modules/
+src/
+dist/**/*.js
+!dist/index.js
+**/*.ts
 **/*.map
 .gitignore
 tsconfig.json

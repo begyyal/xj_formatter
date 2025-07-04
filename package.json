@@ -44,6 +44,6 @@
     },
     "dependencies": {
         "java-parser": "^2.3.3",
-        "xjs-common": "^7.0.0"
+        "xjs-common": "^10.1.0"
     }
 }

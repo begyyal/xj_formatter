@@ -3,11 +3,28 @@ import { int2array, UType } from "xjs-common";
 import { AsyncLocalStorage } from "async_hooks";
 import { FormattingOptions, TextDocument, TextEdit, TextLine } from "vscode";
 
+interface XjElement {
+    token: IToken;
+    t: string;
+    tAnc: string;
+}
 export class NodeProcessor {
     private readonly _als = new AsyncLocalStorage<{ document: TextDocument, depth: number }>();
     private readonly _edits: TextEdit[] = [];
-    private readonly _row2elms: Record<number, { depth: number, elms: { elm: IToken, t: string }[] }> = {};
+    private readonly _row2elms: Record<number, { depth: number, elms: XjElement[] }> = {};
     private readonly _indentUnit = this._options.insertSpaces ? int2array(this._options.tabSize).map(_ => " ").join("") : "\t";
+    private readonly _indentPrefixTypes = [
+        "classBodyDeclaration",
+        "methodDeclarator",
+        "blockStatements"
+    ];
+    private readonly _nospaceCheckers: ((b: XjElement, e: XjElement) => boolean)[] = [
+        (b, e) => "Dot" === b.t || ["Semicolon", "Dot", "Comma"].includes(e.t),
+        (b, e) => "LBrace" === b.t || "RBrace" === e.t,
+        (b, e) => !["If", "For", "While", "Switch"].includes(b.t) && "LBrace" === e.t,
+        (b, e) => b.tAnc === "typeParameters" && b.t === "Less" || e.tAnc === "typeParameters" && e.t === "Greater",
+        (b, e) => "UnaryPrefixOperator" === b.t,
+    ];
     constructor(private readonly _options: FormattingOptions) { }
     exe(document: TextDocument, n: CstNode): TextEdit[] {
         this._als.run({ document, depth: 0 }, () => this.exeIn(n));
@@ -15,35 +32,33 @@ export class NodeProcessor {
             this.scanTextLine(document.lineAt(Number(e[0])), e[1].elms, e[1].depth));
         return this._edits;
     }
-    private exeIn(n: CstNode): void {
+    private exeIn(n: CstNode, tAnc?: string): void {
         for (const e of Object.entries(n.children)) {
             const type = e[0];
-            const doIndent = [
-                "classBodyDeclaration",
-                "blockStatements"
-            ].includes(type);
+            const doIndent = this._indentPrefixTypes.includes(type);
             if (doIndent) this._als.getStore().depth++;
-            for (const a of e[1]) {
-                if (isNode(a)) this.exeIn(a);
-                else if (a.image) {
-                    const rowIdx = a.startLine - 1;
-                    this._row2elms[rowIdx] ??= { depth: this._als.getStore().depth, elms: [] };
-                    this._row2elms[rowIdx].elms.push({ elm: a, t: type });
+            for (let i = 0; i < e[1].length; i++) {
+                const elm = e[1][i];
+                if (isNode(elm)) this.exeIn(elm, type);
+                else if (elm.image) {
+                    const rowIdx = elm.startLine - 1;
+                    if (!this._row2elms[rowIdx]) {
+                        let depth = this._als.getStore().depth;
+                        if (tAnc === "methodDeclarator" && (i === 0 || i === e[1].length - 1)) depth--;
+                        this._row2elms[rowIdx] = { depth, elms: [] };
+                    }
+                    this._row2elms[rowIdx].elms.push({ token: elm, t: type, tAnc });
                 }
             }
             if (doIndent) this._als.getStore().depth--;
         }
     }
-    private scanTextLine(textLine: TextLine, elms: { elm: IToken, t: string }[], depth: number): void {
-        elms.sort((a, b) => a.elm.startOffset - b.elm.startOffset);
-        let text = this.generateIndent(depth), before: { elm: IToken, t: string } = null;
+    private scanTextLine(textLine: TextLine, elms: XjElement[], depth: number): void {
+        elms.sort((a, b) => a.token.startOffset - b.token.startOffset);
+        let text = this.generateIndent(depth), before: XjElement = null;
         for (const elm of elms) {
-            if (before) if (
-                !["Semicolon", "Dot", "LBrace", "RBrace"].includes(elm.t) &&
-                !["Dot", "LBrace"].includes(before.t) ||
-                ["If", "For", "While"].includes(before.t))
-                text += " ";
-            text += elm.elm.image;
+            if (before && !this._nospaceCheckers.some(c => c(before, elm))) text += " ";
+            text += elm.token.image;
             before = elm;
         }
         this._edits.push(TextEdit.replace(textLine.range, text));
