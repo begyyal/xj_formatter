@@ -23,7 +23,10 @@ export class NodeProcessor {
         (b, e) => "LBrace" === b.t || "RBrace" === e.t,
         (b, e) => !["If", "For", "While", "Switch"].includes(b.t) && "LBrace" === e.t,
         (b, e) => b.tAnc === "typeParameters" && b.t === "Less" || e.tAnc === "typeParameters" && e.t === "Greater",
-        (b, e) => "UnaryPrefixOperator" === b.t,
+        (b, e) => b.tAnc === "typeArguments" && b.t === "Less" || e.tAnc === "typeArguments" && e.t === "Greater",
+        (_, e) => e.tAnc === "typeArguments" && e.t === "Less",
+        (b, _) => "UnaryPrefixOperator" === b.t,
+        (b, _) => "At" === b.t,
     ];
     constructor(private readonly _options: FormattingOptions) { }
     exe(document: TextDocument, n: CstNode): TextEdit[] {

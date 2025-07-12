@@ -34,16 +34,16 @@
     },
     "scripts": {
         "build": "tsc && ncc build dist/tsc/index.js",
-        "reinstall": "npm run build && vsce package && code --install-extension xj-formatter-0.0.1.vsix",
-        "postinstall": "node ./node_modules/vscode/bin/install && tsc"
+        "reinstall": "npm run build && vsce package && code --install-extension xj-formatter-0.0.1.vsix"
     },
     "devDependencies": {
         "@types/node": "^22.10.5",
-        "typescript": "^5.7.3",
-        "vscode": "^1.1.37"
+        "@types/vscode": "^1.96.0",
+        "typescript": "^5.7.3"
     },
     "dependencies": {
         "java-parser": "^2.3.3",
-        "xjs-common": "^10.1.0"
+        "xjs-common": "^10.1.0",
+        "xjs-node": "^1.0.1"
     }
 }
