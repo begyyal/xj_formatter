@@ -1,4 +1,4 @@
-import { CstNode, IToken } from "java-parser";
+import { CstElement, CstNode, IToken } from "java-parser";
 import { int2array, UType } from "xjs-common";
 import { AsyncLocalStorage } from "async_hooks";
 import { FormattingOptions, TextDocument, TextEdit, TextLine } from "vscode";
@@ -16,7 +16,8 @@ export class NodeProcessor {
     private readonly _indentPrefixTypes = [
         "classBodyDeclaration",
         "methodDeclarator",
-        "blockStatements"
+        "blockStatements",
+        "argumentList"
     ];
     private readonly _nospaceCheckers: ((b: XjElement, e: XjElement) => boolean)[] = [
         (b, e) => "Dot" === b.t || ["Semicolon", "Dot", "Comma"].includes(e.t),
@@ -42,19 +43,29 @@ export class NodeProcessor {
             if (doIndent) this._als.getStore().depth++;
             for (let i = 0; i < e[1].length; i++) {
                 const elm = e[1][i];
+                if (hasComments(elm)) {
+                    const comments = (elm.leadingComments ?? []).concat(elm.trailingComments ?? []);
+                    comments.forEach(c => this.collectToken(c, type, tAnc));
+                }
                 if (isNode(elm)) this.exeIn(elm, type);
                 else if (elm.image) {
-                    const rowIdx = elm.startLine - 1;
-                    if (!this._row2elms[rowIdx]) {
-                        let depth = this._als.getStore().depth;
-                        if (tAnc === "methodDeclarator" && (i === 0 || i === e[1].length - 1)) depth--;
-                        this._row2elms[rowIdx] = { depth, elms: [] };
-                    }
-                    this._row2elms[rowIdx].elms.push({ token: elm, t: type, tAnc });
+                    const noIndent = tAnc === "methodDeclarator" && (i === 0 || i === e[1].length - 1);
+                    this.collectToken(elm, type, tAnc, noIndent);
                 }
             }
             if (doIndent) this._als.getStore().depth--;
         }
+    }
+    private collectToken(elm: IToken, type: string, tAnc: string, noIndent?: boolean): void {
+        // currently the tokens over multiple line are not supported.
+        if (elm.startLine != elm.endLine) return;
+        const rowIdx = elm.startLine - 1;
+        if (!this._row2elms[rowIdx]) {
+            let depth = this._als.getStore().depth;
+            if (noIndent) depth--;
+            this._row2elms[rowIdx] = { depth, elms: [] };
+        }
+        this._row2elms[rowIdx].elms.push({ token: elm, t: type, tAnc });
     }
     private scanTextLine(textLine: TextLine, elms: XjElement[], depth: number): void {
         elms.sort((a, b) => a.token.startOffset - b.token.startOffset);
@@ -72,4 +83,7 @@ export class NodeProcessor {
 }
 function isNode(v: any): v is CstNode {
     return UType.isDefined(v["location"]);
+}
+function hasComments(v: CstElement): boolean {
+    return v.leadingComments?.length > 0 || v.trailingComments?.length > 0;
 }

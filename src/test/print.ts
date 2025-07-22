@@ -11,6 +11,8 @@ function process(n: CstNode): void {
         results.push(type);
         for (let i = 0; i < e[1].length; i++) {
             const elm = e[1][i];
+            if (elm.leadingComments) results.push(`leading comments => ${JSON.stringify(elm.leadingComments)}`);
+            if (elm.trailingComments) results.push(`trailing comments => ${JSON.stringify(elm.trailingComments)}`);
             if (isNode(elm)) process(elm);
             else results.push(elm.image);
         }
