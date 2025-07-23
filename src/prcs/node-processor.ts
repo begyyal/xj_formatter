@@ -1,5 +1,5 @@
 import { CstElement, CstNode, IToken } from "java-parser";
-import { int2array, UType } from "xjs-common";
+import { int2array, UString, UType } from "xjs-common";
 import { AsyncLocalStorage } from "async_hooks";
 import { FormattingOptions, TextDocument, TextEdit, TextLine } from "vscode";
 
@@ -9,7 +9,10 @@ interface XjElement {
     tAnc: string;
 }
 export class NodeProcessor {
-    private readonly _als = new AsyncLocalStorage<{ document: TextDocument, depth: number }>();
+    private readonly _als = new AsyncLocalStorage<{
+        document: TextDocument,
+        indentStack: number[] // start line numbers of the statement block.
+    }>();
     private readonly _edits: TextEdit[] = [];
     private readonly _row2elms: Record<number, { depth: number, elms: XjElement[] }> = {};
     private readonly _indentUnit = this._options.insertSpaces ? int2array(this._options.tabSize).map(_ => " ").join("") : "\t";
@@ -26,34 +29,47 @@ export class NodeProcessor {
         (b, e) => b.tAnc === "typeParameters" && b.t === "Less" || e.tAnc === "typeParameters" && e.t === "Greater",
         (b, e) => b.tAnc === "typeArguments" && b.t === "Less" || e.tAnc === "typeArguments" && e.t === "Greater",
         (_, e) => e.tAnc === "typeArguments" && e.t === "Less",
+        (b, e) => b.tAnc === "typeArguments" && b.t === "Greater" && e.tAnc === "fqnOrRefTypePartCommon",
         (b, _) => "UnaryPrefixOperator" === b.t,
         (b, _) => "At" === b.t,
     ];
+    private readonly _noindentCheckers: ((type: string, tAnc: string, tBefore: string, flat: boolean, isEdge: boolean) => boolean)[] = [
+        (_1, a, _2, _3, eg) => a === "methodDeclarator" && eg,
+        (_1, _2, b, f, eg) => b === "argumentList" && f && eg,
+    ];
     constructor(private readonly _options: FormattingOptions) { }
     exe(document: TextDocument, n: CstNode): TextEdit[] {
-        this._als.run({ document, depth: 0 }, () => this.exeIn(n));
+        this._als.run({ document, indentStack: [] }, () => this.exeIn(n, 1));
         Object.entries(this._row2elms).forEach(e =>
             this.scanTextLine(document.lineAt(Number(e[0])), e[1].elms, e[1].depth));
         return this._edits;
     }
-    private exeIn(n: CstNode, tAnc?: string): void {
+    private exeIn(n: CstNode, line: number, tAnc?: string): void {
+        const indentStack = this._als.getStore().indentStack;
+        const beforeState: { depth: number, t: string } = { depth: 0, t: null };
         for (const e of Object.entries(n.children)) {
             const type = e[0];
-            const doIndent = this._indentPrefixTypes.includes(type);
-            if (doIndent) this._als.getStore().depth++;
+            const indentBaseLine = indentStack[indentStack.length - 1] ?? 0;
+            const doIndent = line > indentBaseLine && this._indentPrefixTypes.includes(type);
+            if (doIndent) indentStack.push(line);
             for (let i = 0; i < e[1].length; i++) {
                 const elm = e[1][i];
                 if (hasComments(elm)) {
                     const comments = (elm.leadingComments ?? []).concat(elm.trailingComments ?? []);
                     comments.forEach(c => this.collectToken(c, type, tAnc));
                 }
-                if (isNode(elm)) this.exeIn(elm, type);
+                if (isNode(elm)) this.exeIn(elm, elm.location.startLine, type);
                 else if (elm.image) {
-                    const noIndent = tAnc === "methodDeclarator" && (i === 0 || i === e[1].length - 1);
+                    const noIndent = this._noindentCheckers.some(c => c(
+                        type, tAnc, beforeState.t,
+                        beforeState.depth === indentStack.length,
+                        i === 0 || i === e[1].length - 1));
                     this.collectToken(elm, type, tAnc, noIndent);
                 }
             }
-            if (doIndent) this._als.getStore().depth--;
+            beforeState.depth = indentStack.length;
+            beforeState.t = type;
+            if (doIndent) indentStack.pop();
         }
     }
     private collectToken(elm: IToken, type: string, tAnc: string, noIndent?: boolean): void {
@@ -61,7 +77,7 @@ export class NodeProcessor {
         if (elm.startLine != elm.endLine) return;
         const rowIdx = elm.startLine - 1;
         if (!this._row2elms[rowIdx]) {
-            let depth = this._als.getStore().depth;
+            let depth = this._als.getStore().indentStack.length;
             if (noIndent) depth--;
             this._row2elms[rowIdx] = { depth, elms: [] };
         }
@@ -69,16 +85,13 @@ export class NodeProcessor {
     }
     private scanTextLine(textLine: TextLine, elms: XjElement[], depth: number): void {
         elms.sort((a, b) => a.token.startOffset - b.token.startOffset);
-        let text = this.generateIndent(depth), before: XjElement = null;
+        let text = UString.repeat(this._indentUnit, depth), before: XjElement = null;
         for (const elm of elms) {
             if (before && !this._nospaceCheckers.some(c => c(before, elm))) text += " ";
             text += elm.token.image;
             before = elm;
         }
         this._edits.push(TextEdit.replace(textLine.range, text));
-    }
-    private generateIndent(d: number): string {
-        return int2array(d).map(_ => this._indentUnit).join("");
     }
 }
 function isNode(v: any): v is CstNode {
