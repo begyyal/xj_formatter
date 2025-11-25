@@ -1,8 +1,10 @@
 
 /src/test*
+/src/test/target
 !/src/test
 dist/
 node_modules/
 
 parsed.txt
+cst.json
 xj-formatter-*.vsix

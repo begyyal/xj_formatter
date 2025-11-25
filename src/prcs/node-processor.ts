@@ -1,7 +1,9 @@
-import { CstElement, CstNode, IToken } from "java-parser";
-import { int2array, UString, UType } from "xjs-common";
+import { CstNode, IToken } from "java-parser";
+import { int2array, UString } from "xjs-common";
 import { AsyncLocalStorage } from "async_hooks";
 import { FormattingOptions, TextDocument, TextEdit, TextLine } from "vscode";
+import { cstNode2json, hasComments, isNode, isTernary } from "../func/u";
+import { s_out } from "..";
 
 interface XjElement {
     token: IToken;
@@ -11,20 +13,22 @@ interface XjElement {
 export class NodeProcessor {
     private readonly _als = new AsyncLocalStorage<{
         document: TextDocument,
-        indentStack: number[] // start line numbers of the statement block.
+        stack: { line: number, n: CstNode, indent?: boolean }[]
     }>();
     private readonly _edits: TextEdit[] = [];
-    private readonly _row2elms: Record<number, { depth: number, elms: XjElement[] }> = {};
+    private readonly _row2elms: Record<number, { indentDepth: number, elms: XjElement[] }> = {};
     private readonly _indentUnit = this._options.insertSpaces ? int2array(this._options.tabSize).map(_ => " ").join("") : "\t";
-    private readonly _indentPrefixTypes = [
-        "classBodyDeclaration",
-        "methodDeclarator",
+    private readonly _noindentTypes = [
+        /.*[Cc]ompilationUnit/,
+        /.+Declaration/,
+        /.+List/,
         "blockStatements",
-        "argumentList"
+        "conditionalExpression"
     ];
     private readonly _nospaceCheckers: ((b: XjElement, e: XjElement) => boolean)[] = [
         (b, e) => "Dot" === b.t || ["Semicolon", "Dot", "Comma"].includes(e.t),
         (b, e) => "LBrace" === b.t || "RBrace" === e.t,
+        (b, e) => "LSquare" === b.t || ["LSquare", "RSquare"].includes(e.t),
         (b, e) => !["If", "For", "While", "Switch"].includes(b.t) && "LBrace" === e.t,
         (b, e) => b.tAnc === "typeParameters" && b.t === "Less" || e.tAnc === "typeParameters" && e.t === "Greater",
         (b, e) => b.tAnc === "typeArguments" && b.t === "Less" || e.tAnc === "typeArguments" && e.t === "Greater",
@@ -32,54 +36,48 @@ export class NodeProcessor {
         (b, e) => b.tAnc === "typeArguments" && b.t === "Greater" && e.tAnc === "fqnOrRefTypePartCommon",
         (b, _) => "UnaryPrefixOperator" === b.t,
         (b, _) => "At" === b.t,
-    ];
-    private readonly _noindentCheckers: ((type: string, tAnc: string, tBefore: string, flat: boolean, isEdge: boolean) => boolean)[] = [
-        (_1, a, _2, _3, eg) => a === "methodDeclarator" && eg,
-        (_1, _2, b, f, eg) => b === "argumentList" && f && eg,
+        (b, e) => [b, e].some(e2 => e2.t === "ColonColon")
     ];
     constructor(private readonly _options: FormattingOptions) { }
     exe(document: TextDocument, n: CstNode): TextEdit[] {
-        this._als.run({ document, indentStack: [] }, () => this.exeIn(n, 1));
+        this._als.run({ document, stack: [] }, () => this.exeIn(n, 1));
         Object.entries(this._row2elms).forEach(e =>
-            this.scanTextLine(document.lineAt(Number(e[0])), e[1].elms, e[1].depth));
+            this.scanTextLine(document.lineAt(Number(e[0])), e[1].elms, e[1].indentDepth));
         return this._edits;
     }
-    private exeIn(n: CstNode, line: number, tAnc?: string): void {
-        const indentStack = this._als.getStore().indentStack;
-        const beforeState: { depth: number, t: string } = { depth: 0, t: null };
+    private exeIn(n: CstNode, line: number): void {
+        const stack = this._als.getStore().stack;
+        const parentNode = stack[stack.length - 1];
+        const indent = line > parentNode?.line
+            && !this._noindentTypes.some(t => parentNode.n.name.match(t))
+            || parentNode.n.name === "ifStatement" && ["expression", "statement"].includes(n.name)
+            || isTernary(n);
+        if (!indent && line === 21)
+            s_out.appendLine(cstNode2json(parentNode.n));
+        stack.push({ line, indent, n });
         for (const e of Object.entries(n.children)) {
             const type = e[0];
-            const indentBaseLine = indentStack[indentStack.length - 1] ?? 0;
-            const doIndent = line > indentBaseLine && this._indentPrefixTypes.includes(type);
-            if (doIndent) indentStack.push(line);
             for (let i = 0; i < e[1].length; i++) {
                 const elm = e[1][i];
                 if (hasComments(elm)) {
                     const comments = (elm.leadingComments ?? []).concat(elm.trailingComments ?? []);
-                    comments.forEach(c => this.collectToken(c, type, tAnc));
+                    comments.forEach(c => this.collectToken(c, type, n.name));
                 }
-                if (isNode(elm)) this.exeIn(elm, elm.location.startLine, type);
-                else if (elm.image) {
-                    const noIndent = this._noindentCheckers.some(c => c(
-                        type, tAnc, beforeState.t,
-                        beforeState.depth === indentStack.length,
-                        i === 0 || i === e[1].length - 1));
-                    this.collectToken(elm, type, tAnc, noIndent);
-                }
+                if (isNode(elm)) this.exeIn(elm, elm.location.startLine);
+                else if (elm.image) this.collectToken(elm, type, n.name);
             }
-            beforeState.depth = indentStack.length;
-            beforeState.t = type;
-            if (doIndent) indentStack.pop();
         }
+        stack.pop();
     }
     private collectToken(elm: IToken, type: string, tAnc: string, noIndent?: boolean): void {
-        // currently the tokens over multiple line are not supported.
+        // currently the tokens over multiple lines are not supported. 
+        // (i.e. comment of multiple lines will be ignored as formatting.)
         if (elm.startLine != elm.endLine) return;
         const rowIdx = elm.startLine - 1;
         if (!this._row2elms[rowIdx]) {
-            let depth = this._als.getStore().indentStack.length;
-            if (noIndent) depth--;
-            this._row2elms[rowIdx] = { depth, elms: [] };
+            let indentDepth = this._als.getStore().stack.filter(s => s.indent).length;
+            if (noIndent) indentDepth--;
+            this._row2elms[rowIdx] = { indentDepth, elms: [] };
         }
         this._row2elms[rowIdx].elms.push({ token: elm, t: type, tAnc });
     }
@@ -93,10 +91,4 @@ export class NodeProcessor {
         }
         this._edits.push(TextEdit.replace(textLine.range, text));
     }
-}
-function isNode(v: any): v is CstNode {
-    return UType.isDefined(v["location"]);
-}
-function hasComments(v: CstElement): boolean {
-    return v.leadingComments?.length > 0 || v.trailingComments?.length > 0;
 }

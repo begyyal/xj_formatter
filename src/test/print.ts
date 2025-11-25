@@ -1,8 +1,11 @@
 import { CstNode, parse } from "java-parser";
-import { UString, UType } from "xjs-common";
+import { UString } from "xjs-common";
 import { UFile } from "xjs-node";
+import { cstNode2json, isNode } from "../func/u";
 
-const text = UFile.read("./src/test/Sample.java", "utf8");
+const t = UFile.exists("./src/test/target") && UFile.read("./src/test/target", "utf8");
+if (!t) throw Error("no target of the printing was specified.");
+const text = UFile.read(`./src/test/${t}.java`, "utf8");
 const node = parse(text);
 const results = [];
 function process(n: CstNode, stack: number): void {
@@ -19,8 +22,6 @@ function process(n: CstNode, stack: number): void {
         }
     }
 }
-function isNode(v: any): v is CstNode {
-    return UType.isDefined(v["location"]);
-}
 process(node, 0);
+UFile.write("./cst.json", cstNode2json(node));
 UFile.write("./parsed.txt", results.join("\n"));
