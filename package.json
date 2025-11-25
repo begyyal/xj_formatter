@@ -35,7 +35,7 @@
     "scripts": {
         "print": "ts-node src/test/print.ts",
         "build": "tsc && ncc build dist/tsc/index.js",
-        "reinstall": "npm run build && vsce package && code --install-extension xj-formatter-0.0.1.vsix"
+        "reinstall": "npm run build && vsce package && code --install-extension xj-formatter-1.0.0.vsix"
     },
     "devDependencies": {
         "@types/node": "^22.10.5",

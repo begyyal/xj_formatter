@@ -2,8 +2,7 @@ import { CstNode, IToken } from "java-parser";
 import { int2array, UString } from "xjs-common";
 import { AsyncLocalStorage } from "async_hooks";
 import { FormattingOptions, TextDocument, TextEdit, TextLine } from "vscode";
-import { cstNode2json, hasComments, isNode, isTernary } from "../func/u";
-import { s_out } from "..";
+import { hasComments, isNode, isTernary } from "../func/u";
 
 interface XjElement {
     token: IToken;
@@ -13,7 +12,7 @@ interface XjElement {
 export class NodeProcessor {
     private readonly _als = new AsyncLocalStorage<{
         document: TextDocument,
-        stack: { line: number, n: CstNode, indent?: boolean }[]
+        stack: { line: number, n: CstNode, indent?: boolean, sibling: number }[]
     }>();
     private readonly _edits: TextEdit[] = [];
     private readonly _row2elms: Record<number, { indentDepth: number, elms: XjElement[] }> = {};
@@ -41,20 +40,21 @@ export class NodeProcessor {
     constructor(private readonly _options: FormattingOptions) { }
     exe(document: TextDocument, n: CstNode): TextEdit[] {
         this._als.run({ document, stack: [] }, () => this.exeIn(n, 1));
+        if (Object.keys(this._row2elms).length === 0) return;
+        this.adjustIndent();
         Object.entries(this._row2elms).forEach(e =>
             this.scanTextLine(document.lineAt(Number(e[0])), e[1].elms, e[1].indentDepth));
         return this._edits;
     }
-    private exeIn(n: CstNode, line: number): void {
+    private exeIn(n: CstNode, line: number, sibling: number = 0): void {
         const stack = this._als.getStore().stack;
         const parentNode = stack[stack.length - 1];
-        const indent = line > parentNode?.line
-            && !this._noindentTypes.some(t => parentNode.n.name.match(t))
-            || parentNode.n.name === "ifStatement" && ["expression", "statement"].includes(n.name)
-            || isTernary(n);
-        if (!indent && line === 21)
-            s_out.appendLine(cstNode2json(parentNode.n));
-        stack.push({ line, indent, n });
+        let indent = line > parentNode?.line
+            && !this._noindentTypes.some(t => parentNode.n.name.match(t));
+        const isElseIf = this.underElseIf(n);
+        indent &&= !isElseIf && !this.underElseIf();
+        indent ||= isTernary(n);
+        stack.push({ line, indent, n, sibling });
         for (const e of Object.entries(n.children)) {
             const type = e[0];
             for (let i = 0; i < e[1].length; i++) {
@@ -63,23 +63,42 @@ export class NodeProcessor {
                     const comments = (elm.leadingComments ?? []).concat(elm.trailingComments ?? []);
                     comments.forEach(c => this.collectToken(c, type, n.name));
                 }
-                if (isNode(elm)) this.exeIn(elm, elm.location.startLine);
-                else if (elm.image) this.collectToken(elm, type, n.name);
+                if (isNode(elm)) this.exeIn(elm, elm.location.startLine, i);
+                else if (elm.image) {
+                    const noIndent = isElseIf && "Else" === type;
+                    this.collectToken(elm, type, n.name, noIndent);
+                }
             }
         }
         stack.pop();
+    }
+    private underElseIf(n?: CstNode): boolean {
+        const stack = this._als.getStore().stack;
+        const adjuster = n ? 0 : 1;
+        if (stack.length < 2 + adjuster) return false;
+        return (n ?? stack[stack.length - 1].n).name === "ifStatement"
+            && stack[stack.length - 1 - adjuster].n.name === "statement" && stack[stack.length - 1 - adjuster].sibling === 1
+            && stack[stack.length - 2 - adjuster].n.name === "ifStatement";
     }
     private collectToken(elm: IToken, type: string, tAnc: string, noIndent?: boolean): void {
         // currently the tokens over multiple lines are not supported. 
         // (i.e. comment of multiple lines will be ignored as formatting.)
         if (elm.startLine != elm.endLine) return;
         const rowIdx = elm.startLine - 1;
-        if (!this._row2elms[rowIdx]) {
-            let indentDepth = this._als.getStore().stack.filter(s => s.indent).length;
-            if (noIndent) indentDepth--;
-            this._row2elms[rowIdx] = { indentDepth, elms: [] };
-        }
+        const getDepth = () =>
+            this._als.getStore().stack.filter(s => s.indent).length + (noIndent ? -1 : 0);
+        if (!this._row2elms[rowIdx])
+            this._row2elms[rowIdx] = { indentDepth: getDepth(), elms: [] };
+        else if (this._row2elms[rowIdx].elms[0].token.startColumn > elm.startColumn)
+            this._row2elms[rowIdx].indentDepth = getDepth();
         this._row2elms[rowIdx].elms.push({ token: elm, t: type, tAnc });
+    }
+    private adjustIndent(): void {
+        let rows = Object.values(this._row2elms), bi = rows[0].indentDepth;
+        for (let row of rows) {
+            if (bi + 1 < row.indentDepth) row.indentDepth = bi + 1;
+            bi = row.indentDepth;
+        }
     }
     private scanTextLine(textLine: TextLine, elms: XjElement[], depth: number): void {
         elms.sort((a, b) => a.token.startOffset - b.token.startOffset);
