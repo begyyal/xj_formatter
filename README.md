@@ -6,3 +6,6 @@ This only provides indenting and spacing between elements.
 
 # Motivation
 Certain vscode extension for java is so good, but just for simple formatting, what needs complicated procedure and external tools is too ridiculous.
+
+# License
+[Apache-License](./LICENSE)

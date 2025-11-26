@@ -3,7 +3,6 @@ import { int2array, UString } from "xjs-common";
 import { AsyncLocalStorage } from "async_hooks";
 import { FormattingOptions, TextDocument, TextEdit, TextLine } from "vscode";
 import { hasComments, isNode, isTernary } from "../func/u";
-import { s_out } from "..";
 
 interface XjElement {
     token: IToken;
@@ -17,7 +16,7 @@ export class NodeProcessor {
     }>();
     private readonly _edits: TextEdit[] = [];
     private readonly _row2elms: Record<number, {
-        indent: { depth: number, plusAdj?: boolean },
+        indentDepth: number,
         nodeDepth: number,
         elms: XjElement[]
     }> = {};
@@ -51,7 +50,7 @@ export class NodeProcessor {
         if (Object.keys(this._row2elms).length === 0) return;
         this.adjustIndent();
         Object.entries(this._row2elms).forEach(e =>
-            this.scanTextLine(document.lineAt(Number(e[0])), e[1].elms, e[1].indent.depth));
+            this.scanTextLine(document.lineAt(Number(e[0])), e[1].elms, e[1].indentDepth));
         return this._edits;
     }
     private exeIn(n: CstNode, line: number, sibling: number = 0): void {
@@ -95,25 +94,17 @@ export class NodeProcessor {
         // (i.e. comment of multiple lines will be ignored as formatting.)
         if (elm.startLine != elm.endLine) return;
         const rowIdx = elm.startLine - 1;
-        const getDepth = () => {
-            if (elm.startLine === 64) {
-                this._als.getStore().stack.forEach(e => {
-                    s_out.appendLine(e.line + " : " + e.n.name + " : " + e.indent);
-                });
-                s_out.appendLine("node depth : " + getNodeDepth());
-            }
-            const depth = this._als.getStore().stack.filter(s => s.indent).length + indentAdjuster;
-            return { depth, plusAdj: indentAdjuster > 0 }
-        }
+        const getDepth = () =>
+            this._als.getStore().stack.filter(s => s.indent).length + indentAdjuster;
         const getNodeDepth = () => {
             const s = [...this._als.getStore().stack];
             while (s.length > 0 && !s[s.length - 1].indent) s.pop();
             return s.length;
         }
         if (!this._row2elms[rowIdx])
-            this._row2elms[rowIdx] = { indent: getDepth(), elms: [], nodeDepth: getNodeDepth() };
+            this._row2elms[rowIdx] = { indentDepth: getDepth(), elms: [], nodeDepth: getNodeDepth() };
         else if (this._row2elms[rowIdx].elms[0].token.startColumn > elm.startColumn) {
-            this._row2elms[rowIdx].indent = getDepth();
+            this._row2elms[rowIdx].indentDepth = getDepth();
             this._row2elms[rowIdx].nodeDepth = getNodeDepth();
         }
         this._row2elms[rowIdx].elms.push({ token: elm, t: type, tAnc });
@@ -121,18 +112,16 @@ export class NodeProcessor {
     private adjustIndent(): void {
         let rows = Object.values(this._row2elms), br = rows[0], adjStack: { adj: number, nd: number }[] = [];
         for (let row of rows) {
-            const brIndentOrigin = br.indent.depth + adjStack.map(e => e.adj).reduce((a, b) => a + b, 0);
-            if (brIndentOrigin + 1 < row.indent.depth) {
-                adjStack.push({ adj: row.indent.depth - brIndentOrigin - 1, nd: row.nodeDepth });
-                s_out.appendLine("start adj => " + row.elms[0].token.startLine + " : " + adjStack[adjStack.length - 1].adj + " | br: " + JSON.stringify(br.indent) + " row: " + JSON.stringify(row.indent));
+            const brIndentOrigin = br.indentDepth + adjStack.map(e => e.adj).reduce((a, b) => a + b, 0);
+            if (brIndentOrigin + 1 < row.indentDepth) {
+                adjStack.push({ adj: row.indentDepth - brIndentOrigin - 1, nd: row.nodeDepth });
             } else for (let d = adjStack.length - 1, i = 0; d >= 0; d--, i++)
                 if (adjStack[d].nd > row.nodeDepth) {
-                    s_out.appendLine("end adj => " + row.elms[0].token.startLine + " : " + adjStack[adjStack.length - 1].adj);
                     const e = adjStack.pop();
                     if (i === 0 && ["RBrace", "RSquare", "RCurly"].includes(row.elms[0]?.t))
-                        row.indent.depth -= e.adj;
+                        row.indentDepth -= e.adj;
                 } else break;
-            adjStack.forEach(e => row.indent.depth -= e.adj);
+            adjStack.forEach(e => row.indentDepth -= e.adj);
             br = row;
         }
     }
