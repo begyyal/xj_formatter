@@ -10,7 +10,7 @@
         "url": "https://github.com/begyyal/xj_formatter"
     },
     "engines": {
-        "vscode": "^1.96.0"
+        "vscode": "^1.106.2"
     },
     "categories": [
         "Formatters"
@@ -33,9 +33,9 @@
         ]
     },
     "scripts": {
-        "print": "ts-node src/test/print.ts",
-        "build": "tsc && ncc build dist/tsc/index.js",
-        "reinstall": "npm run build && vsce package && code --install-extension xj-formatter-1.0.0.vsix"
+        "print": "ts-node ./src/test/print.ts",
+        "build": "tsc && ncc build ./dist/tsc/index.js",
+        "reinstall": "npm run build && vsce package && sh ./tool/install.sh"
     },
     "devDependencies": {
         "@types/node": "^22.10.5",

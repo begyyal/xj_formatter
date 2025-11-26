@@ -2,6 +2,7 @@
 typings/**
 node_modules/
 src/
+tool/
 dist/**/*.js
 !dist/index.js
 **/*.ts
@@ -9,3 +10,5 @@ dist/**/*.js
 .gitignore
 tsconfig.json
 xj-formatter-*.vsix
+cst.json
+parsed.txt
