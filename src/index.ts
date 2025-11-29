@@ -3,9 +3,9 @@ import { parse } from "java-parser";
 import { NodeProcessor } from './prcs/node-processor';
 
 export const s_out = window.createOutputChannel("xj-formatter");
-export function activate(context: ExtensionContext) {
+export function activate(_context: ExtensionContext) {
     languages.registerDocumentFormattingEditProvider('java', {
-        provideDocumentFormattingEdits(document: TextDocument, options: FormattingOptions): TextEdit[] {
+        async provideDocumentFormattingEdits(document: TextDocument, options: FormattingOptions): Promise<TextEdit[]> {
             try {
                 const node = parse(document.getText());
                 return new NodeProcessor(options).exe(document, node);

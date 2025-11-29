@@ -1,8 +1,10 @@
 import { CstNode, IToken } from "java-parser";
 import { int2array, UString } from "xjs-common";
 import { AsyncLocalStorage } from "async_hooks";
-import { FormattingOptions, TextDocument, TextEdit, TextLine } from "vscode";
+import { FormattingOptions, TextDocument, TextEdit, TextLine, workspace } from "vscode";
 import { hasComments, isNode, isTernary } from "../func/u";
+import { s_out } from "..";
+import { DebugSetting } from "../obj/setting";
 
 interface XjElement {
     token: IToken;
@@ -44,7 +46,10 @@ export class NodeProcessor {
         (b, _) => "At" === b.t,
         (b, e) => [b, e].some(e2 => e2.t === "ColonColon")
     ];
-    constructor(private readonly _options: FormattingOptions) { }
+    private readonly _debug?: DebugSetting;
+    constructor(private readonly _options: FormattingOptions) {
+        this._debug = workspace.getConfiguration("begyyal.xj-formatter").get("debug");
+    }
     exe(document: TextDocument, n: CstNode): TextEdit[] {
         this._als.run({ document, stack: [] }, () => this.exeIn(n, 1));
         if (Object.keys(this._row2elms).length === 0) return;
@@ -94,8 +99,13 @@ export class NodeProcessor {
         // (i.e. comment of multiple lines will be ignored as formatting.)
         if (elm.startLine != elm.endLine) return;
         const rowIdx = elm.startLine - 1;
-        const getDepth = () =>
-            this._als.getStore().stack.filter(s => s.indent).length + indentAdjuster;
+        const getDepth = () => {
+            if (elm.startLine === this._debug?.printNodeStack) {
+                this._als.getStore().stack.forEach(e => s_out.appendLine(`${e.line}: ${e.n.name} | ${e.indent}`));
+                s_out.appendLine(`node depth --- ${getNodeDepth()}`);
+            }
+            return this._als.getStore().stack.filter(s => s.indent).length + indentAdjuster;
+        }
         const getNodeDepth = () => {
             const s = [...this._als.getStore().stack];
             while (s.length > 0 && !s[s.length - 1].indent) s.pop();
@@ -115,8 +125,12 @@ export class NodeProcessor {
             const brIndentOrigin = br.indentDepth + adjStack.map(e => e.adj).reduce((a, b) => a + b, 0);
             if (brIndentOrigin + 1 < row.indentDepth) {
                 adjStack.push({ adj: row.indentDepth - brIndentOrigin - 1, nd: row.nodeDepth });
+                if (this._debug.printIndentAdjustment)
+                    s_out.appendLine(`start adj => ${row.elms[0].token.startLine}: ${adjStack[adjStack.length - 1].adj}`);
             } else for (let d = adjStack.length - 1, i = 0; d >= 0; d--, i++)
                 if (adjStack[d].nd > row.nodeDepth) {
+                    if (this._debug.printIndentAdjustment)
+                        s_out.appendLine(`end adj => ${row.elms[0].token.startLine}: ${adjStack[d].adj}`);
                     const e = adjStack.pop();
                     if (i === 0 && ["RBrace", "RSquare", "RCurly"].includes(row.elms[0]?.t))
                         row.indentDepth -= e.adj;

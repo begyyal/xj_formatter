@@ -1,7 +1,7 @@
 {
     "name": "xj-formatter",
     "displayName": "xj-formatter",
-    "description": "Java formatter for VS Code Extension with minimal functionalities.",
+    "description": "Java formatter for VSCode Extension with minimal functionalities.",
     "version": "0.0.1",
     "publisher": "begyyal",
     "license": "Apache-2.0",
@@ -20,6 +20,11 @@
     ],
     "main": "dist/index",
     "contributes": {
+        "configuration": {
+            "title": "begyyal.xj-formatter",
+            "type": "object",
+            "properties": {}
+        },
         "languages": [
             {
                 "id": "java",
@@ -27,7 +32,7 @@
                     "Java"
                 ],
                 "extensions": [
-                    "java"
+                    ".java"
                 ]
             }
         ]
