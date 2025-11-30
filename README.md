@@ -6,7 +6,7 @@ This only provides indenting and spacing between elements.
 
 # Install
 1. clone this repository.
-2. `npm i && npm run install`
+2. `npm i && npm run install:vsix`
 3. select `begyyal.xj-formatter` as java formatter in VSCode preferences. 
 
 ### Why isn't this published to VSCode marketplace?

@@ -39,8 +39,8 @@
     },
     "scripts": {
         "print": "ts-node ./src/test/print.ts",
-        "build": "tsc && ncc build ./dist/tsc/index.js",
-        "install": "npm run build && vsce package && sh ./tool/install.sh"
+        "build": "tsc && ncc build ./dist/tsc/index.js && vsce package",
+        "install:vsix": "npm run build && sh ./tool/install.sh"
     },
     "devDependencies": {
         "@types/node": "^22.10.5",
