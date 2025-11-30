@@ -31,25 +31,30 @@ export class NodeProcessor {
     private readonly _indentUnit = this._options.insertSpaces ? int2array(this._options.tabSize).map(_ => " ").join("") : "\t";
     private readonly _noindentTypes = [
         /^.*[Cc]ompilationUnit$/,
-        /^.+Declaration$/,
+        /^.+Declarations?$/,
+        /^.+Statements$/,
         /^.+List$/,
-        "blockStatements"
     ];
-    private readonly _noindentChecker: ((n: CstNode) => boolean)[] = [
+    private readonly _noindentCheckers: ((n: CstNode) => boolean)[] = [
         n => this._noindentTypes.some(t => n.name.match(t))
+    ];
+    private readonly _spaceCheckers: ((b: XjToken, e: XjToken) => boolean)[] = [
+        (b, e) => ["AssignmentOperator", "BinaryOperator", "Equals", "QuestionMark"].some(t => t === b.t || t === e.t),
+        (b, _) => ["If", "For", "While", "Switch", "Colon", "Comma"].includes(b.t)
     ];
     private readonly _nospaceCheckers: ((b: XjToken, e: XjToken) => boolean)[] = [
         (b, e) => "Dot" === b.t || ["Semicolon", "Dot", "Comma"].includes(e.t),
         (b, e) => "LBrace" === b.t || "RBrace" === e.t,
+        (b, e) => "LBrace" === e.t && e.tAnc != "parenthesisExpression",
+        (b, e) => "RBrace" === b.t && b.tAnc === "referenceTypeCastExpression",
         (b, e) => "UnaryPrefixOperator" === b.t || "UnarySuffixOperator" === e.t,
         (b, e) => "LSquare" === b.t || ["LSquare", "RSquare"].includes(e.t),
-        (b, e) => !["If", "For", "While", "Switch", "Colon", "Comma", "QuestionMark"].includes(b.t) && e.tAnc != "parenthesisExpression" && "LBrace" === e.t,
         (b, e) => b.tAnc === "typeParameters" && b.t === "Less" || e.tAnc === "typeParameters" && e.t === "Greater",
         (b, e) => b.tAnc === "typeArguments" && b.t === "Less" || e.tAnc === "typeArguments" && e.t === "Greater",
         (_, e) => e.tAnc === "typeArguments" && e.t === "Less",
         (b, e) => b.tAnc === "typeArguments" && b.t === "Greater" && e.tAnc === "fqnOrRefTypePartCommon",
         (b, _) => "At" === b.t,
-        (b, e) => [b, e].some(e2 => e2.t === "ColonColon")
+        (b, e) => [b.t, e.t].includes("ColonColon")
     ];
     private readonly _debug: DebugSetting;
     constructor(private readonly _options: FormattingOptions) {
@@ -69,7 +74,7 @@ export class NodeProcessor {
     private exeIn(n: CstNode, line: number): void {
         const stack = this._als.getStore().stack;
         const indent = Object.values(n.children).flatMap(l => l).some(e => (isNode(e) ? e.location.startLine : e.startLine) > line)
-            && !this._noindentChecker.some(c => c(n));
+            && !this._noindentCheckers.some(c => c(n));
         stack.push({ line, indent, n, id: this._layerCounter++ });
         for (const e of Object.entries(n.children)) for (let i = 0; i < e[1].length; i++) {
             const type = e[0], elm = e[1][i];
@@ -94,7 +99,7 @@ export class NodeProcessor {
             const depth = this._als.getStore().stack.filter(s => s.indent && elm.startLine > s.line).length + indentAdjuster;
             if (elm.startLine === this._debug.printNodeStack) {
                 this.printStack(this._als.getStore().stack);
-                s_out.appendLine(`image --- "${elm.image}" (${type}) / depth --- ${depth} (adj:${indentAdjuster})}`);
+                s_out.appendLine(`image --- "${elm.image}" (${type}) / depth --- ${depth} (adj:${indentAdjuster})`);
             }
             return { depth, plsAdj: indentAdjuster > 0 };
         }
@@ -136,7 +141,7 @@ export class NodeProcessor {
     private scanTextLine(textLine: TextLine, elms: XjToken[], depth: number): void {
         let text = UString.repeat(this._indentUnit, depth), before: XjToken = null;
         for (const elm of elms) {
-            if (before && !this._nospaceCheckers.some(c => c(before, elm))) text += " ";
+            if (before && (this._spaceCheckers.some(c => c(before, elm)) || !this._nospaceCheckers.some(c => c(before, elm)))) text += " ";
             text += elm.token.image;
             before = elm;
         }
@@ -144,6 +149,6 @@ export class NodeProcessor {
     }
     private printStack(stack: XjNodeLayer[]): void {
         if (this._debug.enable) stack.forEach(e =>
-            s_out.appendLine(`${e.line.toString().padEnd(4)}: ${e.id.toString().padEnd(5)}: / ${e.n.name} / ${e.indent}`));
+            s_out.appendLine(`${e.line.toString().padEnd(4)}: ${e.id.toString().padEnd(5)}: ${e.n.name} / ${e.indent}`));
     }
 }
