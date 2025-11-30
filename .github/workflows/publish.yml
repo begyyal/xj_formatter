@@ -1,0 +1,45 @@
+name: publish
+on: 
+  workflow_dispatch:
+    inputs:
+      version: 
+        description: 'package version.'
+        required: true
+        type: string
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+    - uses: actions/checkout@v4
+    - name: Setup nodejs
+      uses: actions/setup-node@v4
+      with:
+        node-version: '22.x'
+        registry-url: 'https://registry.npmjs.org'
+    - name: Build
+      run: |
+        npm install -g npm@latest
+        npm ci && npm run build
+    - name: Set git configs
+      run: |
+        git config --global user.email "begyyal@gmail.com"
+        git config --global user.name "begyyal-ghost"
+    - name: Push a git tag
+      run: |
+        git tag ${{ inputs.version }}
+        git push origin ${{ inputs.version }} -f
+    - name: Post tweet
+      run: |
+        ./tool/tweet_template.sh \
+        ${{ inputs.version }} \
+        ${{ github.event.repository.html_url }} > ./data_temp
+        ./tool/tweet.sh \
+        ${{ secrets.TW_CONS_KEY }} \
+        ${{ secrets.TW_CONS_SECRET }} \
+        ${{ secrets.TW_OAUTH_TOKEN }} \
+        ${{ secrets.TW_OAUTH_SECRET }} \
+        ./data_temp
+

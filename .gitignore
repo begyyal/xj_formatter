@@ -8,3 +8,4 @@ node_modules/
 parsed.txt
 cst.json
 xj-formatter-*.vsix
+.ghtoken

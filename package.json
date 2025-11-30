@@ -2,7 +2,7 @@
     "name": "xj-formatter",
     "displayName": "xj-formatter",
     "description": "Java formatter for VSCode Extension with minimal functionalities.",
-    "version": "0.0.1",
+    "version": "1.0.0",
     "publisher": "begyyal",
     "license": "Apache-2.0",
     "repository": {
@@ -40,7 +40,7 @@
     "scripts": {
         "print": "ts-node ./src/test/print.ts",
         "build": "tsc && ncc build ./dist/tsc/index.js",
-        "reinstall": "npm run build && vsce package && sh ./tool/install.sh"
+        "install": "npm run build && vsce package && sh ./tool/install.sh"
     },
     "devDependencies": {
         "@types/node": "^22.10.5",
