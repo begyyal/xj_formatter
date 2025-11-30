@@ -14,6 +14,7 @@ public class Sample4 {
             if (a == b)
                 return;
             int z = 0;
+            int x = 0;
         } : () -> { };
     }
 }
